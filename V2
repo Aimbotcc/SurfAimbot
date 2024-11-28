@@ -1,0 +1,207 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- Variables
+local silentAimActive = true
+local framesEnabled = true
+local tracersEnabled = true
+local targetPlayer = nil
+local aimRange = 50 -- Adjust this value to set the aimbot range
+
+local function createFrameAndTracerForCharacter(character, localCharacter)
+    local torso = character:WaitForChild("HumanoidRootPart")
+
+    -- Create and add the frame
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Name = "ESPFrameGUI"
+    billboardGui.Adornee = torso
+    billboardGui.Size = UDim2.new(4, 0, 5, 0) -- Adjust the size to fit the torso
+    billboardGui.AlwaysOnTop = true
+    billboardGui.Parent = character
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0) -- Adjust size
+    frame.Position = UDim2.new(0, 0, 0, 0) -- Adjust position
+    frame.BackgroundTransparency = 0.5 -- Set transparency to 0.5
+    frame.BorderSizePixel = 2
+    frame.Parent = billboardGui
+
+    -- Create a line using the Drawing API
+    local line = Drawing.new("Line")
+    line.Thickness = 2
+
+    -- Update the frame color and line position every frame based on range
+    RunService.RenderStepped:Connect(function()
+        if character.Parent and localCharacter and localCharacter:FindFirstChild("HumanoidRootPart") then
+            local distance = (character.HumanoidRootPart.Position - localCharacter.HumanoidRootPart.Position).Magnitude
+            if distance <= aimRange then
+                frame.BackgroundColor3 = Color3.fromRGB(0, 200, 0) -- In range: Green
+                frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- In range: Bright green border
+                line.Color = Color3.fromRGB(0, 200, 0) -- In range: Green
+                character:SetAttribute("InRange", true)
+            else
+                frame.BackgroundColor3 = Color3.fromRGB(200, 0, 0) -- Out of range: Red
+                frame.BorderColor3 = Color3.fromRGB(255, 0, 0) -- Out of range: Bright red border
+                line.Color = Color3.fromRGB(200, 0, 0) -- Out of range: Red
+                character:SetAttribute("InRange", false)
+            end
+            
+            -- Update tracer position
+            local torsoPosition = Camera:WorldToViewportPoint(character.HumanoidRootPart.Position)
+            local rootPosition = Camera:WorldToViewportPoint(localCharacter.HumanoidRootPart.Position)
+            line.From = Vector2.new(rootPosition.X, rootPosition.Y)
+            line.To = Vector2.new(torsoPosition.X, torsoPosition.Y)
+            line.Visible = tracersEnabled
+            frame.Visible = framesEnabled
+        else
+            line.Visible = false
+            frame.Visible = false
+        end
+    end)
+end
+
+local function onCharacterAdded(player)
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(character)
+            createFrameAndTracerForCharacter(character, LocalPlayer.Character)
+        end)
+        if player.Character then
+            createFrameAndTracerForCharacter(player.Character, LocalPlayer.Character)
+        end
+    end
+end
+
+-- Apply frames and tracers to the local player's character
+local function onLocalCharacterAdded(character)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            createFrameAndTracerForCharacter(player.Character, character)
+        end
+    end
+end
+
+-- Connect to local player's character spawning
+LocalPlayer.CharacterAdded:Connect(onLocalCharacterAdded)
+if LocalPlayer.Character then
+    onLocalCharacterAdded(LocalPlayer.Character)
+end
+
+-- Connect to other players' characters spawning
+Players.PlayerAdded:Connect(onCharacterAdded)
+for _, player in pairs(Players:GetPlayers()) do
+    onCharacterAdded(player)
+end
+
+-- Clean up frames and tracers when characters are removed
+Players.PlayerRemoving:Connect(function(player)
+    if player.Character then
+        local frame = player.Character:FindFirstChild("ESPFrameGUI")
+        if frame then
+            frame:Destroy()
+        end
+    end
+end)
+
+-- Create a cleaner UI for toggling frames and tracers
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer.PlayerGui
+
+local function createStyledButton(text, position)
+    local button = Instance.new("TextButton")
+    button.Text = text
+    button.Size = UDim2.new(0, 180, 0, 40)
+    button.Position = position
+    button.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Darker grey
+    button.BackgroundTransparency = 0.5
+    button.BorderColor3 = Color3.fromRGB(0, 255, 0) -- Bright green
+    button.BorderSizePixel = 1
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Font = Enum.Font.SourceSansBold
+    button.TextSize = 18
+    button.AutoButtonColor = false
+
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 10)
+    uiCorner.Parent = button
+
+    button.Parent = ScreenGui
+    return button
+end
+
+local framesButton = createStyledButton("Toggle ESP", UDim2.new(1, -200, 0, 10))
+framesButton.MouseButton1Click:Connect(function()
+    framesEnabled = not framesEnabled
+    framesButton.BackgroundColor3 = framesEnabled and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(200, 0, 0)
+end)
+
+local tracersButton = createStyledButton("Toggle Tracers", UDim2.new(1, -200, 0, 60))
+tracersButton.MouseButton1Click:Connect(function()
+    tracersEnabled = not tracersEnabled
+    tracersButton.BackgroundColor3 = tracersEnabled and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(200, 0, 0)
+end)
+
+-- Function to get the nearest target's head
+local function getNearestHead()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:GetAttribute("InRange") == true then
+            local distance = (player.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+                shortestDistance = distance
+                closestPlayer = player
+            end
+        end
+    end
+
+    if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("Head") then
+        return closestPlayer.Character.Head
+    end
+
+    return nil
+end
+
+-- Silent aim functionality with headshots
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and silentAimActive then
+        local targetHead = getNearestHead()
+        if targetHead then
+            local aimPosition = targetHead.Position
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, aimPosition)
+            ReplicatedStorage.Remotes.Attack:FireServer(targetHead)
+        end
+    end
+end)
+
+-- Detect when mouse buttons are pressed
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isLeftMouseDown = true
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        isRightMouseDown = true
+    end
+end)
+
+-- Detect when mouse buttons are released
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isLeftMouseDown = false
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        isRightMouseDown = false
+    end
+end)
+
+-- Run the lock camera to head function periodically
+RunService.RenderStepped:Connect(function()
+    smoothCameraLockToHead()
+end)
+print("V1.5 Executed")
+print("Surf X - Rivals PREMIUM Script Active Now🟢")
