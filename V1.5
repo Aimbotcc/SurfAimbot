@@ -8,70 +8,60 @@ local Camera = Workspace.CurrentCamera
 
 -- Variables
 local silentAimActive = true
-local isLeftMouseDown = false
-local isRightMouseDown = false
-local autoClickConnection = nil
-local tracersEnabled = true
 local framesEnabled = true
-local tracers = {}
-
--- Function to check if the lobby is visible
-local function isLobbyVisible()
-    return LocalPlayer.PlayerGui:FindFirstChild("MainGui") and LocalPlayer.PlayerGui.MainGui:FindFirstChild("MainFrame") and LocalPlayer.PlayerGui.MainGui.MainFrame:FindFirstChild("Lobby") and LocalPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible
-end
-
--- Function to lock camera to the target player's head
-local function lockCameraToHead()
-    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") then
-        local head = targetPlayer.Character.Head
-        local headPosition = Camera:WorldToViewportPoint(head.Position)
-        if headPosition.Z > 0 then
-            local cameraPosition = Camera.CFrame.Position
-            Camera.CFrame = CFrame.new(cameraPosition, head.Position)
-        end
-    end
-end
+local tracersEnabled = true
+local targetPlayer = nil
+local aimRange = 50 -- Adjust this value to set the aimbot range
 
 local function createFrameAndTracerForCharacter(character, localCharacter)
-    local head = character:WaitForChild("Head")
+    local torso = character:WaitForChild("HumanoidRootPart")
 
-    -- Create and add the dark green frame
+    -- Create and add the frame
     local billboardGui = Instance.new("BillboardGui")
-    billboardGui.Name = "GreenFrameGUI"
-    billboardGui.Adornee = head
-    billboardGui.Size = UDim2.new(4, 0, 6, 0) -- Adjust the size to fit better
+    billboardGui.Name = "ESPFrameGUI"
+    billboardGui.Adornee = torso
+    billboardGui.Size = UDim2.new(4, 0, 5, 0) -- Adjust the size to fit the torso
     billboardGui.AlwaysOnTop = true
     billboardGui.Parent = character
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 1.2, 0) -- Adjust size
-    frame.Position = UDim2.new(0, 0, 0.05, 0) -- Adjust position
-    frame.BackgroundColor3 = Color3.fromRGB(0, 100, 0) -- Dark green
-    frame.BackgroundTransparency = 0.7 -- Set transparency to 0.8
-    frame.BorderSizePixel = 0
+    frame.Size = UDim2.new(1, 0, 1, 0) -- Adjust size
+    frame.Position = UDim2.new(0, 0, 0, 0) -- Adjust position
+    frame.BackgroundTransparency = 0.5 -- Set transparency to 0.5
+    frame.BorderSizePixel = 2
     frame.Parent = billboardGui
 
     -- Create a line using the Drawing API
     local line = Drawing.new("Line")
-    line.Thickness = 3
-    line.Color = Color3.fromRGB(0, 100, 0) -- Dark green
-    line.Transparency = 0.5
+    line.Thickness = 2
 
-    -- Store the line in the tracers table
-    tracers[character] = {line = line, frame = frame}
-
-    -- Update the line position every frame
+    -- Update the frame color and line position every frame based on range
     RunService.RenderStepped:Connect(function()
-        if tracersEnabled and character.Parent and localCharacter and localCharacter:FindFirstChild("HumanoidRootPart") then
-            local headPosition = Camera:WorldToViewportPoint(character.Head.Position)
+        if character.Parent and localCharacter and localCharacter:FindFirstChild("HumanoidRootPart") then
+            local distance = (character.HumanoidRootPart.Position - localCharacter.HumanoidRootPart.Position).Magnitude
+            if distance <= aimRange then
+                frame.BackgroundColor3 = Color3.fromRGB(0, 200, 0) -- In range: Green
+                frame.BorderColor3 = Color3.fromRGB(0, 255, 0) -- In range: Bright green border
+                line.Color = Color3.fromRGB(0, 200, 0) -- In range: Green
+                character:SetAttribute("InRange", true)
+            else
+                frame.BackgroundColor3 = Color3.fromRGB(200, 0, 0) -- Out of range: Red
+                frame.BorderColor3 = Color3.fromRGB(255, 0, 0) -- Out of range: Bright red border
+                line.Color = Color3.fromRGB(200, 0, 0) -- Out of range: Red
+                character:SetAttribute("InRange", false)
+            end
+            
+            -- Update tracer position
+            local torsoPosition = Camera:WorldToViewportPoint(character.HumanoidRootPart.Position)
             local rootPosition = Camera:WorldToViewportPoint(localCharacter.HumanoidRootPart.Position)
             line.From = Vector2.new(rootPosition.X, rootPosition.Y)
-            line.To = Vector2.new(headPosition.X, headPosition.Y)
-            line.Visible = true
+            line.To = Vector2.new(torsoPosition.X, torsoPosition.Y)
+            line.Visible = tracersEnabled
+            frame.Visible = framesEnabled
         else
             line.Visible = false
+            frame.Visible = false
         end
-        frame.Visible = framesEnabled
     end)
 end
 
@@ -86,7 +76,7 @@ local function onCharacterAdded(player)
     end
 end
 
--- Apply tracers to the local player's character
+-- Apply frames and tracers to the local player's character
 local function onLocalCharacterAdded(character)
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -107,16 +97,17 @@ for _, player in pairs(Players:GetPlayers()) do
     onCharacterAdded(player)
 end
 
--- Clean up lines when characters are removed
+-- Clean up frames and tracers when characters are removed
 Players.PlayerRemoving:Connect(function(player)
-    if tracers[player.Character] then
-        tracers[player.Character].line:Remove()
-        tracers[player.Character].frame:Destroy()
-        tracers[player.Character] = nil
+    if player.Character then
+        local frame = player.Character:FindFirstChild("ESPFrameGUI")
+        if frame then
+            frame:Destroy()
+        end
     end
 end)
 
--- Create UI for toggling tracers and frames
+-- Create a cleaner UI for toggling frames and tracers
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer.PlayerGui
@@ -124,75 +115,36 @@ ScreenGui.Parent = LocalPlayer.PlayerGui
 local function createStyledButton(text, position)
     local button = Instance.new("TextButton")
     button.Text = text
-    button.Size = UDim2.new(0, 200, 0, 50)
+    button.Size = UDim2.new(0, 180, 0, 40)
     button.Position = position
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 50) -- Dark grey
+    button.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Darker grey
     button.BackgroundTransparency = 0.5
-    button.BorderColor3 = Color3.fromRGB(255, 255, 255) -- White outline
+    button.BorderColor3 = Color3.fromRGB(0, 255, 0) -- Bright green
     button.BorderSizePixel = 1
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.Font = Enum.Font.SourceSans
-    button.TextSize = 24
+    button.Font = Enum.Font.SourceSansBold
+    button.TextSize = 18
     button.AutoButtonColor = false
 
     local uiCorner = Instance.new("UICorner")
-    uiCorner.CornerRadius = UDim.new(0, 12)
+    uiCorner.CornerRadius = UDim.new(0, 10)
     uiCorner.Parent = button
 
     button.Parent = ScreenGui
     return button
 end
 
-local tracersButton = createStyledButton("Toggle Tracers", UDim2.new(1, -220, 0, 10))
-tracersButton.MouseButton1Click:Connect(function()
-    tracersEnabled = not tracersEnabled
-    tracersButton.BackgroundColor3 = tracersEnabled and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(255, 100, 100)
-end)
-
-local framesButton = createStyledButton("Toggle Boxes", UDim2.new(1, -220, 0, 70))
+local framesButton = createStyledButton("Toggle ESP", UDim2.new(1, -200, 0, 10))
 framesButton.MouseButton1Click:Connect(function()
     framesEnabled = not framesEnabled
-    framesButton.BackgroundColor3 = framesEnabled and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(255, 100, 100)
+    framesButton.BackgroundColor3 = framesEnabled and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(200, 0, 0)
 end)
 
-
-
-
-
--- Services
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Camera = Workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-
--- Variables
-local silentAimActive = true
-local isLeftMouseDown = false
-local isRightMouseDown = false
-local autoClickConnection = nil
-local targetPlayer = nil
-
--- Function to check if the lobby is visible
-local function isLobbyVisible()
-    return LocalPlayer.PlayerGui:FindFirstChild("MainGui") and LocalPlayer.PlayerGui.MainGui:FindFirstChild("MainFrame") and LocalPlayer.PlayerGui.MainGui.MainFrame:FindFirstChild("Lobby") and LocalPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible
-end
-
--- Function to lock camera to the target player's head
-local function lockCameraToHead()
-    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") then
-        local head = targetPlayer.Character.Head
-        local headPosition = Camera:WorldToViewportPoint(head.Position)
-        if headPosition.Z > 0 then
-            local cameraPosition = Camera.CFrame.Position
-            local direction = (head.Position - cameraPosition).Unit
-            Camera.CFrame = CFrame.new(cameraPosition, head.Position)
-        end
-    end
-end
-
+local tracersButton = createStyledButton("Toggle Tracers", UDim2.new(1, -200, 0, 60))
+tracersButton.MouseButton1Click:Connect(function()
+    tracersEnabled = not tracersEnabled
+    tracersButton.BackgroundColor3 = tracersEnabled and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(200, 0, 0)
+end)
 
 -- Function to get the nearest target's head
 local function getNearestHead()
@@ -200,7 +152,7 @@ local function getNearestHead()
     local shortestDistance = math.huge
 
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:GetAttribute("InRange") == true then
             local distance = (player.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
             if distance < shortestDistance then
                 shortestDistance = distance
@@ -233,10 +185,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         isLeftMouseDown = true
-        autoClick()
     elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
         isRightMouseDown = true
-        autoClick()
     end
 end)
 
@@ -251,5 +201,7 @@ end)
 
 -- Run the lock camera to head function periodically
 RunService.RenderStepped:Connect(function()
-    lockCameraToHead()
+    smoothCameraLockToHead()
 end)
+print("V1.5 Executed")
+print("Surf X - Rivals PREMIUM Script Active Now🟢")
